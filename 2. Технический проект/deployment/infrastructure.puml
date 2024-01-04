@@ -1,0 +1,58 @@
+@startuml
+  !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+
+!include <tupadr3/devicons2/postgresql>
+!include <tupadr3/material/queue>
+
+LAYOUT_WITH_LEGEND()
+
+Deployment_Node(dc, "Сервер системы", "Golang, PostgreSQL, Nginx and HAProxy"){
+    Container(apiGateway, "API-gateway", "nginx", "Распределяем запросы между мобильными клиентами и веб-клиентами по разным микросервисам")
+
+    Container(loadBalancer, "Балансировщик нагрузки", "HAProxy", "Распределяет сетевую нагрузку по облачным ресурсам")
+
+    Deployment_Node(deckhouseNodeUsersGroup, "Группа нод микросервиса пользователей", "deckhouse node group"){
+        Deployment_Node(deckhouseNodeUsers, "Нода микросервиса пользователей", "k8s node"){
+            Deployment_Node(deckhousePodUsers, "Под микросервиса пользователей", "k8s pod"){
+                Container(usersMicroservice, "Микросервис пользователей", "Golang", "Редактирование пользователем информации в своем аккаунте")
+            }
+        }
+    }
+
+    Deployment_Node(clusterUsers, "Production DB Host", "Standart s1-c24-m128", "Standard — стандартные ВМ с соотношением объема RAM к ядрам vCPU 4:1. Имеем 24 ядер CPU и 128 ГБ памяти"){
+        ContainerDb(usersMicroserviceDB, "База данных микросервиса пользователя", "PostgreSQL", "Сохраняет предоставленную личную информацию пользователя", $sprite="postgresql")
+    }
+
+    Deployment_Node(deckhouseNodeTransactionsGroup, "Группа нод микросервиса транзакций(покупок)", "deckhouse node group"){
+        Deployment_Node(deckhouseNodeTransactions, "Нода микросервиса транзакций(покупок)", "k8s node"){
+            Deployment_Node(deckhousePodTransactions, "Под микросервиса транзакций(покупок)", "k8s pod"){
+                Container(transactionsMicroservice, "Микросервис транзакций(покупок)", "Golang", "Просмотр пользователем информации о своих транзакциях(покупках), бонусах.")
+            }
+        }
+    }
+
+    Deployment_Node(clusterTransactions, "Production DB Host", "Standart s2-c48-m256", "Standard — стандартные ВМ с соотношением объема RAM к ядрам vCPU 4:1. Имеем 48 ядер CPU и 256 ГБ памяти"){
+        ContainerDb(transactionMicroserviceDB, "База данных микросервиса пользователя", "PostgreSQL", "Сохраняет информацию о транзакция(покупках)", $sprite="postgresql")
+    }
+}
+
+
+Deployment_Node(client, "Устройства пользователей", "IOS, Android and Browsers"){
+    Container(clientAndroidApp, "Мобильное android-приложение клиента", "Kotlin", "Android-приложения системы управления лояльностью клиента")
+
+    Container(clientIOSApp, "Мобильное ios-приложение клиента", "Swift", "IOS-приложения системы управления лояльностью клиента")
+
+    Container(clientWebApp, "Web-приложение клиента", "React", "Web-приложения системы управления лояльностью клиента")
+}
+
+
+apiGateway --> loadBalancer
+client --> apiGateway : "Отправка запроса\n[HTTPS/JSON]"
+loadBalancer --> deckhouseNodeUsersGroup
+loadBalancer --> deckhouseNodeTransactionsGroup
+usersMicroservice --> clusterUsers : "Прочитать/Записать информацию"
+transactionsMicroservice --> clusterTransactions : "Прочитать/Записать информацию"
+
+SHOW_LEGEND()
+
+@enduml
