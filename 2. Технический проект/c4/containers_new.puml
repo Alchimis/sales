@@ -1,0 +1,124 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!include <tupadr3/devicons2/postgresql>
+!include <tupadr3/material/queue>
+!include <tupadr3/material/mail>
+
+title Containers
+
+AddElementTag("v1.0", $borderColor="#d73027")
+AddElementTag("v1.1", $fontColor="#d73027")
+AddElementTag("backup", $fontColor="orange")
+
+AddRelTag("backup", $textColor="orange", $lineColor="orange", $lineStyle = DashedLine())
+
+Person(Visitor, "Клиент [Пользователь]", "Использование скидок, использование акций, использование бонусных баллов")
+Person(Manager, "Мэнеджер [Пользователь]", "Создание скидок\акций, редактирование скидок\акций, аналитика скидок\акций")
+Person(Admin, "Админ [Пользователь]", "Использование скидок, использование бонусных баллов")
+
+System_Ext(EMAIL, "Почтовая система [Программная система]", "Поставщик системы отправки электронных писем")
+System_Ext(PaymentSystem, "Система оплаты [Программная система]", "Приём платежей, интернет эквайринг")
+System_Ext(FNS, "ФНС API [Программная система]", "Автоматизация извлечения данных из Единого государственного реестра юридических лиц (ЕГРЮЛ) и Единого государственного реестра индивидуальных предпринимателей (ЕГРИП)")
+System_Ext(Company, "Система компании [Программная система]", "Набор инструментов, который использует компания")
+System_Ext(GoogleAnalitycs, "Google analitycs [Программная система]", "Набор инструментов для аналитики безнеспроцессов")
+
+
+System_Boundary(Loyality_service, "Сервис лояльности клиентов"){
+    'Api-gateway
+    Container(ApiGateway, "API-gateway", "Go", "Распределяет запросы между мобильным и веб клиентами по разным микросервисам")
+    
+    'Микросервис продуктов, скидок и акций
+    Container(Product, "Микросервис продуктов, скидок и акций", "Go", "Отвечает за управление информацией о продуктах")
+    ContainerDb(ProductDB, "База данных микросервиса продуктов скидок и акций", "PostgreSQL", "Информация о продуктах скидках и акциях", $sprite="postgresql")
+    Product --> ProductDB : Прочитать\записать информацию
+    ApiGateway --> Product : Работа с продуктами, акциями и скидками
+    ContainerQueue(ProductMQ, "Шина сообщений продуктов", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изменением агрегата продукта скидок акций", $sprite="queue")
+    Product --> ProductMQ : публикация событий, связанных с агрегатом продукта
+    Product ----> Company : Чтение баз данных продуктов
+
+    'Микросервис авторизации
+    Container(ClientsAuth, "Микросервис авторизации", "Go", "Отвечает за авторизацию. Использует двухфакторную аутентификацию")
+    ContainerDb(ClientsAuthDB, "База данных микросервиса авторизации клиентов", "PostgreSQL", "Отвечает за хранение кредов", $sprite="postgresql")
+    ApiGateway --> ClientsAuth : Авторизация пользователей
+    ClientsAuth --> ClientsAuthDB : Чтение\запись данных
+    ClientsAuth -----> EMAIL : отправка проверочных сообщений
+
+    'Микросервис клиентов
+    Container(Clients, "Микросервис клиентов", "Go", "Редактирование пользователем своего аккаунта")
+    ContainerDb(ClientsDB, "База данных микросервиса клиентов", "PostgreSQL", "Информация о клиентах", $sprite="postgresql")
+    Clients --> ClientsDB : Прочитать\записать информацию
+    ApiGateway --> Clients : Работа с аккаунтом клиента
+
+    ContainerQueue(ClientQueue, "Шина сообщений пользователя", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изенением агрегата клиента", $sprite="queue")
+    ClientsAuth --> ClientQueue : Публикация событий авторизации клмента в системе
+    
+    Clients --> ClientQueue : Публикация событий, связанных с изменением агргата клиента
+    Clients ----> Company : Чтение баз данных клиентов
+
+    'Микросервис персонала
+    Container(Stuff, "Микросервис персонала", "Go", "Отвечает за функционалные возможности, связанные с персоналом, таких как распределение ролей, и за сам агрегат персонала")
+    ContainerDb(StuffDB, "База данных микросервиса персонала", "PostgreSQL", "", $sprite="postgresql")
+    Stuff --> StuffDB : Прочитать\записать информацию
+    ApiGateway --> Stuff
+
+    ContainerQueue(StuffMQ, "Шина сообщений персонала", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с агрегатом персонала", $sprite="queue")
+    Stuff --> StuffMQ : Публикация событий, связанных с изенением агрегата персонала
+    Stuff ----> Company : "Чтение данных персонала\n[https]"
+    ClientsAuth --> StuffMQ : Публикация событий авторизации сотрудника
+
+
+    'Микросервис покупок
+    Container(Purchase, "Микросервис покупок", "Go", "Отвечает за расчёт цен покупки клинетов, а так же за их хранение и доступ")
+    ContainerDb(PurchaseDB, "База данных микросервиса покупок", "PostgreSQL", "Информация о покупках", $sprite="postgresql")
+    Purchase --> PurchaseDB : Прочитать\записать информацию
+    Purchase --> Product : "Читает информацию о продукте, скидках и акциях\n[gRPC]"
+    Purchase --> Clients : "Читает информацию о кленте\n[gRPC]"
+    ApiGateway --> Purchase
+    ContainerQueue(PurchaseMQ, "Шина покупок", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изменением агрегата покупки", $sprite="queue")
+    Purchase --> PurchaseMQ : Публикация событий, связанных с изменением агрегата покупки
+
+    'Микросервис аналитики
+    Container(Analitics, "Микросервис аналитики", "Go", "Отвечает за сбор и анализ данных об акциях, продуктах, клиентах и других ключевых метрик")
+    ContainerDb(AnaliticsDB, "База данных микросервиса аналитики", "PostgreSQL", "Информация о продуктах", $sprite="postgresql")
+    Analitics --> Purchase : Собирать данные раз в день для выгрузка в аналитическую бд
+    Analitics --> Clients : Собирать данные раз в день для выгрузка в аналитическую бд
+    Analitics --> Product : Собирать данные раз в день для выгрузка в аналитическую бд
+    Analitics --> AnaliticsDB : Прочитать\записать информацию
+    ApiGateway --> Analitics
+    Analitics --> GoogleAnalitycs : Проведение аналитики через сторонние сервисы
+
+
+    'Микросервис компании
+    Container(CompanyMS, "Микросервис компании", "Go", "Отвечает за управление информацией о компании")
+    ContainerDb(CompanyDB, "База данных компании", "PostgreSQL", "Информация о компании", $sprite="postgresql")
+    CompanyMS --> CompanyDB
+    ApiGateway --> CompanyMS
+
+    Container(CompanyVerificationMS, "Микросервис проверки компании", "Go", "Отвечает за проверку данных копании и связанных с ней юридических лиц")
+    CompanyVerificationMS ----> FNS : "Проверяет компанию\n[https]"
+    CompanyMS -> CompanyVerificationMS : "Проверяет компанию\n[gRPC]"
+    Stuff --> CompanyMS : "Чтение данных компании\ngRPC"
+
+    'Микросервис оплаты
+    Container(Payment, "Микросервис оплаты", "Go", "Отвечает за оплату товара")
+    Payment -----> PaymentSystem : Провести оплату
+    ContainerDb(PaymentDB, "База данных оплаты", "PostgreSQL", "Информация о оплате", $sprite="postgresql")
+    Payment --> PaymentDB : чтение\запись данных
+    ApiGateway --> Payment 
+    ContainerQueue(PaymentMQ, "Шина оплаты", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с проведением оплаты", $sprite="queue")
+    Payment --> PaymentMQ : Отвечает за события, связанные с проведением оплаты
+
+    'Микросервис бонусных карт и баллов
+    Container(Bonus, "Микросервис бонусных карт и баллов", "Go", "Отвечает за ведение бонусного счёта и начисление баллов")
+    ContainerDb(BonusDB, "База данных оплаты", "PostgreSQL", "Информация о бонусном счёте", $sprite="postgresql")
+    Bonus --> BonusDB : Прочитать\записать информацию
+    Bonus --> Clients : "Чтение данных клента\n[gRPC]"
+    ApiGateway --> Bonus
+    ContainerQueue(BonusMQ, "Шина бонусов", "Container: RabbitMQ, AMQP", "Отвечает за события, связанные с изменением бонусного счёта", $sprite="queue")
+    Bonus --> BonusMQ : Публикация событий изменения счёта 
+
+    'Связь Person с System
+    Visitor --> ApiGateway : Просмотр информации о скидках, покупках, принятие участия в бонусных программах
+    Manager --> ApiGateway : Управление скидками, аналитика
+    Admin --> ApiGateway : Управление персоналом, контроль скидок 
+}

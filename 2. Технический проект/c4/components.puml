@@ -1,0 +1,387 @@
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Component
+
+
+skinparam rectangle<<boundary>> {
+    Shadowing false
+    StereotypeFontSize 0
+    FontColor #444444
+    BorderColor #444444
+    BorderStyle dashed
+    BackgroundColor #FFFFFF
+}
+
+AddElementTag("v1.0", $borderColor="#d73027")
+AddElementTag("v1.1", $fontColor="#d73027")
+AddElementTag("backup", $fontColor="orange")
+
+AddRelTag("backup", $textColor="orange", $lineColor="orange", $lineStyle = DashedLine())
+
+
+Person(Visitor, "Клиент [Пользователь]", "Использование скидок, использование акций, использование бонусных баллов")
+Person(Manager, "Мэнеджер [Пользователь]", "Создание скидок\акций, редактирование скидок\акций, аналитика скидок\акций")
+Person(Admin, "Админ [Пользователь]", "Использование скидок, использование бонусных баллов")
+
+System_Ext(EMAIL, "Почтовая система [Программная система]", "Поставщик системы отправки электронных писем")
+System_Ext(PaymentSystem, "Система оплаты [Программная система]", "Приём платежей, интернет эквайринг")
+System_Ext(FNS, "ФНС API [Программная система]", "Автоматизация извлечения данных из Единого государственного реестра юридических лиц (ЕГРЮЛ) и Единого государственного реестра индивидуальных предпринимателей (ЕГРИП)")
+System_Ext(Company, "Система компании [Программная система]", "Набор инструментов, который использует компания")
+System_Ext(GoogleAnalitycs, "Google analitycs [Программная система]", "Набор инструментов для аналитики безнеспроцессов")
+
+
+System_Boundary(message_processing_system, ""){
+
+    
+
+    'Api-gateway
+    Container(ApiGateway, "API-gateway", "Go", "Распределяет запросы между мобильным и веб клиентами по разным микросервисам")
+    
+    Container(MobileApp, "Нативное мобильное приложение клиента", "нативные технологии", "мобильно приложение которое пользователь использует для получения скидок, участия в акциях, просмотра покупок, и тд")
+    Visitor --> MobileApp    : Испльзование скидок, просмотр истории покупок и новых акций 
+    MobileApp --> ApiGateway : "Использует\n[https]"
+    Container(MessageBroker, "Брокер сообщений", "RabbitMQ AMQP", "Маршрутизация сообщений от отправителя к получателю")
+    
+
+
+    Container(WebApp, "Веб приложение для персонала компании", "React", "Приложение для персонала компании, которое используется для мониторинга, администрирования персонала и проведения аналитики")
+    Manager --> WebApp : Проведение аналитики, разработка акций и скидок, сегментция клиентуры
+    Admin --> WebApp   : Управление персоналом, клиентурой, создание продуктов
+    WebApp --> ApiGateway  : "Использует\n[https]"
+
+    rectangle "==Микросервисы продуктов, акций и скидок" <<boundary>> as ProductMicroservice {
+        rectangle "==API layer" <<boundary>> as ProductAPILayer{
+            Container(ProductAPIController, "Контроллер api продуков\скидок\акций", "Web api controller", "Обрабаывает http запросы, извлекает параметры из них")
+            Container(ProductRPCController, "Вызов удалённых процедур акций", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(ProductConsumer, "Консюмер акций\скидок\продутов", "Rabbit MQ consumer", "Обрабатывает message из RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as ProductAppLayer{
+            rectangle "==Query" <<boundary>> as ProductQuery{
+                Container(GetProductQuery, "GetProductQuery", "", "вернуть информацию о возможных продуктах")
+                Container(GetPromotionQuery, "GetPromotionQuery", "", "вернуть информацию о возможных акциях")
+                Container(GetDiscountQuery, "GetDiscountQuery", "", "вернуть информацию о возможных скидках")
+            }
+            rectangle "==Comands" <<boundary>> as ProductComands{
+                Container(EditDiscount, "EditDiscount", "", "изменить информацию о скидке")
+                Container(EditProduct, "EditProduct", "", "изменить информацию о продукте")
+                Container(EditPromotion, "EditPromotion", "", "изменить информацию о акции")            
+            }
+        }
+        ProductAPILayer ---> ProductAppLayer : "Использует" 
+        rectangle "==Domain layer" <<boundary>> as ProductDomainLayer{
+            Container(productDomain, "продукт", "Agragate", "детали продукта")
+            Container(promotionDomain, "акция", "Agregate", "детали акции")
+            Container(discountDomain, "скидка", "Agregate", "детали скидки")
+        }
+        ProductQuery ---> ProductDomainLayer : использует
+        rectangle "==Infrastracture layer" <<boundary>> as ProductInfrasractureLayer{
+            Container(ProductReposytory, "Репозиторий продукта, скидки, акции","","Сохранение\востановление агрегата")
+        }
+        ProductQuery ---> ProductInfrasractureLayer : использует
+    }
+    ContainerDb(ProductMSDB, "База данных микросервиса продуктов", "PostgreSQL", "Информация о микросервисе продукта", $sprite="postgresql")
+    ProductInfrasractureLayer --> ProductMSDB : Прочитать\записать инфорацию
+
+    rectangle "==Микросервис авторизации" <<boundary>> as AuthMicroservice{
+        rectangle "==Api layer" <<boundary>> as AuthAPILayer{
+            Container(AuthAPIController, "Контроллер api аутентификации", "Web api controller", "Обрабаывает http запросы, извлекает параметры из них")
+            Container(AuthRPCController, "Вызов удалённых процедур аутентификации", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(AuthProducer, "Продюсер авторизации", "RabbitMQ producer", "Производит message при авторизации пользователя RabbitMQ")
+        
+        }
+        rectangle "==App layer" <<boundary>> as AuthAppLayer{
+            rectangle "==Commands" <<boundary>> as AuthComands{
+                Container(Login, "Login", "", "залогинить пользователя")
+                Container(Authorize, "Authorize", "", "авторизировать польхователя")        
+            }
+        }
+        rectangle "==Infrastractur layer" <<boundary>> as AuthInfrastructureLayer{
+            Container(AuthRepository, "Репозиторий авторизации", "", "Сохранение\востановлеение корсов")
+        }
+        
+        AuthAPILayer ---> AuthAppLayer    : Использует
+        AuthAPILayer ---> AuthInfrastructureLayer    : Использует
+    }
+    ContainerDb(AuthMSDB, "База данных микросервиса аутентификации", "PostgreSQL", "Информация о микросервисе аутентификация", $sprite="postgresql")
+    AuthInfrastructureLayer --> AuthMSDB : Чтение\запись записей
+
+
+    rectangle "==Микросервис клиентов" <<boundary>> as Clientmicroservice{
+        rectangle "==Api layer" <<boundary>> as ClientApiLayer{
+            Container(ClientRPCController, "Вызов удалённых фукций клиента", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(ClientAPIController, "Контроллер API клиентов", "Web API controller", "Обработка http запросов, извлечение параметров из них")
+            Container(ClientProducer, "Продюсер клентов", "RabbitMQ producer", "Производит message RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as ClintAppLayer{
+            rectangle "==Comands" <<boundary>> as ClientComands{
+                Container(EditClient, "EditClient", "", "Изменить информацию о клиенте")
+                Container(CrateClient, "CreateClient", "", "Изменить создать клиента")
+            }
+            rectangle "==Queries" <<boundary>> as ClientQueries{
+                Container(GetClintsQuery, "GetClientsQuery", "", "веррнуть информацию о возможных клиентах")
+            }
+        }
+        ClientApiLayer ---> ClintAppLayer : Использует
+        rectangle "==Domain layer" <<boundary>> as ClinetDomainLayer{
+            Container(ClientAgregate, "Агрегат клиента", "Agregate", "детали клиента")
+        }
+        ClintAppLayer ---> ClinetDomainLayer : Использует
+        rectangle "==Infrastractur layer" <<boundary>> as ClientInfrastructureLayer{
+            Container(ClientRepository, "Репозиторий клиентов", "", "Сохранение\востановлеение агрегата")
+        }
+        ClintAppLayer ---> ClientInfrastructureLayer : Использует
+    }
+    ContainerDb(ClientMSDB, "База данных микросервиса клиентов", "PostgreSQL", "Информация о микросервисе клиентов", $sprite="postgresql")
+    ClientInfrastructureLayer --> ClientMSDB : чтение\запись записи
+
+
+    rectangle "==Микросервис покупок" <<boundary>> as PurchaseMicroservice{
+        rectangle "==Api layer" <<boundary>> as PurchaseApiLayer{
+            Container(PurchaseRPCController, "Вызов удалённых фукций покупки", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(PurchaseAPIController, "Контроллер API покупок", "Web API controller", "Обработка http запросов, извлечение параметров из них")
+            Container(PurchaseConsumer, "консюмер клментов", "RabbitMQ consumer", "Обрабатывает message из RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as   PurchaseAppLayer{
+            rectangle "==Comands" <<boundary>> as PurchaseComands{
+                Container(MakePurchase, "MakePurchase", "", "Сделать покупку")
+                Container(CalculatePrice, "CalculatePrice", "", "Посчитать цену")
+                Container(AddItemToCart, "AddItemToCart", "", "Добавить товар в корзину")
+            }
+            rectangle "==Queries" <<boundary>> as PurchaseQueries{
+                Container(GetPurchaseQuery, "GetPurchaseQuery", "", "веррнуть информацию о возможных покупках")
+            }
+        }
+        rectangle "==Domain layer" <<boundary>> as PurchaseDomainLayer{
+            Container(PurchaseAgregate, "Агрегат покупки", "Agregate", "детали покупки")
+        }
+        rectangle "==Infrastractur layer" <<boundary>> as PurchaseInfrastructureLayer{
+            Container(PurchaseRepository, "Репозиторий покупки", "", "Сохранение\востановлеение агрегата")
+        }
+        PurchaseApiLayer ---> PurchaseAppLayer : Использует
+        PurchaseQueries ---> PurchaseInfrastructureLayer : Использует
+        PurchaseQueries ---> PurchaseDomainLayer : Использует
+    }
+    ContainerDb(PurchaseMSDB, "База данных микросервиса покупок", "PostgreSQL", "Информация о микросервисе покупок", $sprite="postgresql")
+    PurchaseRepository --> PurchaseMSDB : Чтение\запись данных
+
+
+    rectangle "==Микросервис персонала" <<boundary>> as StuffMicroservice{
+        rectangle "==Api layer" <<boundary>> as StuffApiLayer{
+            Container(StuffRPCController, "Вызов удалённых фукций аутентификации", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(StuffAPIController, "Контроллер API аутентиикации", "Web API controller", "Обработка http запросов, извлечение параметров из них")
+            Container(StuffConsumer, "Консюмер клентов", "RabbitMQ consumer", "принимает message от RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as   StuffAppLayer{
+            rectangle "==Comands" <<boundary>> as StuffComands{
+                Container(EditEmployee,  "EditEmployee", "", "Изменить информацию о сотруднике")
+            }
+            rectangle "==Queries" <<boundary>> as StuffQueries{
+                Container(GetEmployeeQuery, "GetClientsQuery", "", "веррнуть информацию о возможных сотрудниках")
+            }
+        }
+        rectangle "==Domain layer" <<boundary>> as StuffDomainLayer{
+            Container(StuffAgregate, "Агрегат сотрудника", "Agregate", "детали сотрудника")
+        }
+        rectangle "==Infrastractur layer" <<boundary>> as StuffInfrastructureLayer{
+            Container(StuffRepository, "Репозиторий сотрудников", "", "Сохранение\востановлеение агрегата")
+        }
+        StuffApiLayer ---> StuffAppLayer : Использует
+        StuffQueries ---> StuffDomainLayer : Использует
+        StuffQueries ---> StuffInfrastructureLayer : Использует
+    }
+    ContainerDb(StuffMSDB, "База данных микросервиса персонала", "PostgreSQL", "Информация о микросервисе персонала", $sprite="postgresql")
+    StuffRepository --> StuffMSDB : Хранение\чтение записей
+
+
+    rectangle "==Микросервис аналитики" <<boundary>> as AnlitycsMicroservice{
+        rectangle "==Api layer" <<boundary>> as AnalyticsApiLayer{
+            Container(AnalitycsRPCController, "Вызов удалённых фукций аналтики", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(AnalitycsAPIController, "Контроллер API аналитики", "Web API controller", "Обработка http запросов, извлечение параметров из них")
+            Container(AnalitycsConsumer, "Консюмер клентов", "RabbitMQ producer", "Принимает message от RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as AnalitycsAppLayer{
+            rectangle "==Comands" <<boundary>> as AnalyticsComands{
+                Container(EditReport, "EditReport", "", "Изменить информацию о отчёте")
+                Container(CrateAnalyticsResult, "CrateAnalyticsResult", "", "создать отчёт аналитики")
+            }
+            rectangle "==Queries" <<boundary>> as AnalitycsQueries{
+                Container(GetReportQuery, "GetReportQuery", "", "веррнуть информацию о возможных отчётах")
+                Container(GetAnalyticsRelustQuery, "GetAnalyticsResultQuery", "", "веррнуть информацию о возможных результатов аналитики")
+            }
+        }
+        rectangle "==Domain layer" <<boundary>> as AnalyticsDomainLayer{
+            Container(ReportAgregate, "Агрегат отчёта", "Agregate", "детали отчёта")
+            Container(AnalytycResutAgregate, "Агрегат резуьтата аналитики", "Agregate", "детали результата аналитики")
+        }
+        rectangle "==Infrastractur layer" <<boundary>> as AnalitycsInfrastructureLayer{
+            Container(ReportRepository, "Репозиторий отчётов", "", "Сохранение\востановлеение агрегата")
+            Container(AnalitycResultRepository, "Репозиторий результатов аналитики", "", "Сохранение\востановлеение агрегата")
+        }
+        AnalyticsApiLayer ---> AnalitycsAppLayer : Использует
+        AnalitycsAppLayer ---> AnalyticsDomainLayer : Использует
+        AnalitycsAppLayer ---> AnalitycsInfrastructureLayer : Использует
+    }
+    ContainerDb(AnalyticsMSDB, "База данных микросервиса аналитики", "PostgreSQL", "Информация о микросервисе аналитики", $sprite="postgresql")
+    AnalitycsInfrastructureLayer --> AnalyticsMSDB : Чтение\запись данных
+
+
+    rectangle "==Микросервис компании" <<boundary>> as CompanyMicroservice{
+        rectangle "==Api layer" <<boundary>> as CompanyApiLayer{
+            Container(CompanyRPCController, "Вызов удалённых фукций компинии", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(CompanyAPIController, "Контроллер API компании", "Web API controller", "Обработка http запросов, извлечение параметров из них")
+            Container(CompanyConsumer, "Консюмер компании", "RabbitMQ consumer", "Прнимает message RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as CompanyAppLayer{
+            rectangle "==Comands" <<boundary>> as CompanyComands{
+                Container(EditCompany, "EditCompany", "", "Изменить информацию о компании")
+            }
+            rectangle "==Queries" <<boundary>> as CompanyQueries{
+                Container(GetCompanyQuery, "GetCompanyQuery", "", "вернуть информацию о возможных компаниях")
+            }
+        }
+        rectangle "==Domain layer" <<boundary>> as CompanyDomainLayer{
+            Container(CompanyAgregate, "Агрегат комапнии", "Agregate", "детали компании")
+        }
+        rectangle "==Infrastractur layer" <<boundary>> as CompanyInfrastructureLayer{
+            Container(CompanyRepository, "Репозиторий компании", "", "Сохранение\востановлеение агрегата")
+        }
+        CompanyApiLayer ---> CompanyAppLayer : Использует
+        CompanyAppLayer ---> CompanyDomainLayer : Использует
+        CompanyAppLayer ---> CompanyInfrastructureLayer : Использует
+    }
+    ContainerDb(CompanyMSDB, "База данных микросервиса компании", "PostgreSQL", "Информация о микросервисе компании", $sprite="postgresql")
+    CompanyInfrastructureLayer --> CompanyMSDB : Чтение\запись записи
+
+    rectangle "==Микросервис проверки компании" <<boundary>> as CompanyVereficationMicroservice{
+        rectangle "==Api layer" <<boundary>> as CompanyVereficationApiLayer{
+            Container(CompanyVereficationRPCController, "Вызов удалённых фукций микросервиса проверки компании", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(CompanyVereficationAPIController, "Контроллер API микросервиса проверки компании", "Web API controller", "Обработка http запросов, извлечение параметров из них")
+            Container(CompanyVereficationConsumer, "Консюмер микросервиса проверки компании", "RabbitMQ producer", "Производит message RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as CompanyVereficationAppLayer{
+            rectangle "==Queries" <<boundary>> as CompanyVereficationQueries{
+                Container(GetDocumentQuery, "GetDocumentQuery", "", "Получить информацию о компании из ФНС")
+            }
+        }
+        rectangle "==Domain layer" <<boundary>> as CompanyVereficationDomainLayer{
+            Container(VereficationDocumentAgregate, "Агрегат документа", "Agregate", "детали документа")
+        }
+        CompanyVereficationApiLayer ---> CompanyVereficationAppLayer : Использует
+        CompanyVereficationQueries ---> CompanyVereficationDomainLayer : Использует
+    }
+
+    rectangle "==Микросервис оплаты" <<boundary>> as PaymentMicroservice{
+        rectangle "==Api layer" <<boundary>> as PaymentApiLayer{
+            Container(PaymentRPCController, "Вызов удалённых фукций микросервиса оплаты", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(PaymentAPIController, "Контроллер API микросервиса оплаты", "Web API controller", "Обработка http запросов, извлечение параметров из них")
+            Container(PaymentConsumer, "Консюмер микросервиса оплаты", "RabbitMQ producer", "Производит message RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as PaymentAppLayer{
+            rectangle "==Comands" <<boundary>> as PaymentComands{
+                Container(Pay, "Pay", "", "Заплатить")
+            }
+            rectangle "==Queries" <<boundary>> as PaymentQueries{
+                Container(GetPaymentQuery, "GetPaymentQuery", "", "веррнуть информацию всех оплатах")
+            }
+        }
+        rectangle "==Domain layer" <<boundary>> as PaymentDomainLayer{
+            Container(PaymentAgregate, "Агрегат оплаты", "Agregate", "детали оплаты")
+        }
+        rectangle "==Infrastractur layer" <<boundary>> as PaymentInfrastructureLayer{
+            Container(PaymentRepository, "Репозиторий оплаты", "", "Сохранение\востановлеение агрегата")
+        }
+        PaymentApiLayer ---> PaymentAppLayer : использует
+        PaymentAppLayer ---> PaymentDomainLayer : использует
+        PaymentAppLayer ---> PaymentInfrastructureLayer : использует
+    }
+    ContainerDb(PaymentMSDB, "База данных микросервиса оплаты", "PostgreSQL", "Информация о микросервисе оплаты", $sprite="postgresql")
+    PaymentInfrastructureLayer --> PaymentMSDB : Чтение\запись данных
+
+    rectangle "==Микросервис бонусов" <<boundary>> as BonusMicroservice{
+        rectangle "==Api layer" <<boundary>> as BonusApiLayer{
+            Container(BonusRPCController, "Вызов удалённых фукций микросервиса бонусов", "gRPC controller", "Позволяет вызывать процедуры по RPC")
+            Container(BonusAPIController, "Контроллер API микросервиса бонусов", "Web API controller", "Обработка http запросов, извлечение параметров из них")
+            Container(BonusConsumer, "Консюмер микросервиса бонусов", "RabbitMQ producer", "Производит message RabbitMQ")
+        }
+        rectangle "==App layer" <<boundary>> as BonusAppLayer{
+            rectangle "==Comands" <<boundary>> as BonusComands{
+                Container(EditBonus, "EditBonus", "", "Провести изменения с бонусным счётом")
+            }
+            rectangle "==Queries" <<boundary>> as BonusQueries{
+                Container(GetBonusQuery, "GetPaymentQuery", "", "Вернуть информациию о бонусных счетах")
+            }
+        }
+        rectangle "==Domain layer" <<boundary>> as BonusDomainLayer{
+            Container(BonusAgregate, "Агрегат бонусного счёта", "Agregate", "бонусный счёт")
+        }
+        rectangle "==Infrastractur layer" <<boundary>> as BonusInfrastructureLayer{
+            Container(BonusRepository, "Репозиторий бонусов", "", "Сохранение\востановлеение агрегата")
+        }
+        BonusApiLayer ---> BonusAppLayer : использует
+        BonusAppLayer ---> BonusDomainLayer : использует
+        BonusAppLayer ---> BonusInfrastructureLayer : использует
+    }
+    ContainerDb(BonusMSDB, "База данных микросервиса бонусов", "PostgreSQL", "Информация о микросервисе бонусов", $sprite="postgresql")
+    BonusInfrastructureLayer --> BonusMSDB : чтение\запись данных
+
+}
+
+
+CompanyMicroservice ----> CompanyVereficationMicroservice : Проверяет сюществование компанию
+CompanyVereficationQueries -------> FNS : Проверяет иформацию через ФНС
+
+StuffMicroservice ----> CompanyMicroservice : "Чтение данных компании\n[gRPC]"
+
+AnlitycsMicroservice ----> ProductMicroservice : Собирает информацию раз в день
+AnlitycsMicroservice ----> PurchaseMicroservice : Собирает информацию раз в день
+AnlitycsMicroservice ----> Clientmicroservice : Собирает информацию раз в день
+
+PurchaseMicroservice ----> ProductMicroservice : "Читает информацию о продукте, скидках и акциях\n[gRPC]"
+PurchaseMicroservice ----> Clientmicroservice : "Читает информацию о клиенте\n[gRPC]"
+
+
+
+ProductMicroservice  ------>  MessageBroker : Публикация сообщени связанных с изменением агрегата продукта\акции\скидки
+AuthMicroservice     ------>  MessageBroker : Публикация сообщени о регистрации пользователя
+Clientmicroservice   ------>  MessageBroker : Чтение сообщение о регистрации клиента 
+StuffMicroservice    ------>  MessageBroker : Чтение сообщение о регистрации сотрудника 
+
+
+AnlitycsMicroservice ------------> GoogleAnalitycs : Использование сторонних инструментов
+
+
+ApiGateway --------> PaymentMicroservice 
+ApiGateway --------> ProductMicroservice 
+ApiGateway --------> Clientmicroservice 
+ApiGateway --------> CompanyMicroservice 
+ApiGateway --------> StuffMicroservice 
+ApiGateway --------> AnlitycsMicroservice  
+ApiGateway --------> BonusMicroservice  
+ApiGateway --------> PurchaseMicroservice  
+ApiGateway --------> AuthMicroservice  
+
+
+
+Clientmicroservice  -------------> Company : Интеграция баз данных клиентов компании [https] 
+ProductMicroservice -------------> Company : Интеграция баз данных продуктов\акций\скидок компании [https] 
+StuffMicroservice   -------------> Company : Интеграция персонала компании компании [https] 
+
+
+Clientmicroservice  -------------> EMAIL : отправка проверочных сообщений [https] 
+PaymentMicroservice -------------> PaymentSystem : Проведение оплаты
+
+
+PurchaseMicroservice -----> MessageBroker : Получение информации о продукте его скидках и акциях
+PurchaseMicroservice -----> MessageBroker : Проверка карты клиента
+PurchaseMicroservice -----> MessageBroker : Получение данных о бонусном счёте клиента
+PurchaseMicroservice -----> MessageBroker : Списание баллов с бонусного счёта клиента
+PurchaseMicroservice -----> MessageBroker : Начисление баллов на бонусный счёта клиента
+PurchaseMicroservice -----> MessageBroker : Отправка чека 
+
+BonusMicroservice    -----> MessageBroker : Отправка данных бонусного счёта
+BonusMicroservice    -----> MessageBroker : Начисление бонусных баллов
+BonusMicroservice    -----> MessageBroker : Списание бонусных баллов
+
+PaymentMicroservice  -----> MessageBroker : Принятие чека
+
+ProductMicroservice  -----> MessageBroker : Публикация изменений в продуктах, акциях и скидках 
