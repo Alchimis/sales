@@ -1,0 +1,22 @@
+@startuml stateDiagram
+state "Пустая Корзина" as EmptyCart
+state "Не пустая Корзина" as NotSoEmptyCart
+state "Пересчёт" as Recount
+state "В ожидании оплаты" as WaitForMoney
+state "Оплачено" as Paid
+state "Отменено" as Canceled
+
+[*] --> EmptyCart
+EmptyCart --> NotSoEmptyCart : добавить продукт
+NotSoEmptyCart --> Recount : Добавить продукт
+Recount --> NotSoEmptyCart : Пересчёт проведён\n[в корзине есть товары]
+Recount --> EmptyCart : Пересчёт проведён\n[в корзине нет товаров]
+NotSoEmptyCart --> Canceled : отменено
+EmptyCart --> Canceled : отменено
+NotSoEmptyCart --> WaitForMoney : перейти к оплате 
+WaitForMoney --> Canceled : отменено
+WaitForMoney --> Paid : Оплата прошла
+Paid --> [*]
+
+
+@enduml
